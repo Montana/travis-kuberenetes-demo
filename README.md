@@ -1,6 +1,5 @@
-# Kubernetes Demo (using OpenShift)
+# Skeleton build to run Kubernetes and OpenShift Origin clusters on Travis CI
 
-Skeleton build to run Kubernetes and OpenShift Origin clusters on Travis CI.
 
 # Usage
 
@@ -49,4 +48,3 @@ If you have further problems, look at the logs, the logs will tell you a story:
 ```git
 xargs git log --merges --no-walk --grep=K8S
 ```
-# Think of title 
