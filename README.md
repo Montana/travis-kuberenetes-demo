@@ -10,7 +10,7 @@ In your repo, and particularly in this example, I'm using `vim`.
 vi test.sh
 
 # Add the module
-git submodule add --name ci https://github.com/fabiand/traviskube ci/
+git submodule add --name ci https://github.com/kubernetes/
 pushd ci ; git pull ; popd
 git commit -asm "Add traviskube CI submodule"
 
