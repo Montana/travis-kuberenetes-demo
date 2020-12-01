@@ -1,0 +1,90 @@
+#!/bin/bash
+# usage: start-cluster (minikube|kind|k3s|oc_cluster) $CLUSTER_VERSION
+
+set -e
+
+source $(dirname $(realpath $0))/defaults
+
+warn() { echo "WARN: $@" >&2 ; }
+condarg() { [[ -n "$2" ]] && echo "$1$2"; }
+
+_minikube() {
+  local CVER=$1
+
+  export MINIKUBE_WANTUPDATENOTIFICATION=false
+  export MINIKUBE_WANTREPORTERRORPROMPT=false
+  export CHANGE_MINIKUBE_NONE_USER=true
+
+  export MINIKUBE_HOME=$HOME
+  mkdir -p $HOME/.kube
+  touch $HOME/.kube/config
+  export KUBECONFIG=$HOME/.kube/config
+
+  sudo -E minikube start \
+    --vm-driver=none \
+    $(condarg "--kubernetes-version=v" $CVER)
+#    --feature-gates=DevicePlugins=true
+
+  minikube update-context
+}
+
+_kind() {
+  local CVER=$1
+
+  # https://kind.sigs.k8s.io/docs/user/quick-start#multi-node-clusters
+  tee cluster.yaml <<EOC
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+- role: worker
+EOC
+
+  kind create cluster --config cluster.yaml
+
+  mkdir -p $HOME/.kube
+  kind get kubeconfig > $HOME/.kube/config
+}
+
+_k3s() {
+  # https://github.com/rancher/k3s#quick-start---install-script
+  curl -sfL https://get.k3s.io | sudo sh -
+  sudo chmod a+rwX /etc/rancher/k3s/k3s.yaml
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+}
+
+_oc_cluster() {
+  local CVER=$1
+
+  [[ -n "$CVER" ]] && {
+    warn "Version '$CVER' was requested."
+    warn "oc cluster does not supporting setting a version."
+    warn "This is not criticial. Continuing."
+  } 2>/dev/stderr
+
+  oc version
+  oc cluster up --skip-registry-check --enable=-router,-sample-templates
+
+  # Needed to watch all pods to come up
+  oc login -u system:admin
+}
+
+_minishift() {
+  local CVER=$1
+
+  minishift version
+  minishift start \
+    --vm-driver=generic \
+    --remote-ipaddress 127.0.0.1 \
+    --remote-ssh-user root \
+    --remote-ssh-key $HOME/.ssh/ci_id_rsa \
+    $(condarg "--openshift-version=v" $CVER)
+
+  # Needed to watch all pods to come up
+  oc login -u system:admin
+}
+
+_${1:-$DEFAULT_PLATFORM} ${2:-$DEFAULT_CLUSTER_VERSION}
+
+sleep 21

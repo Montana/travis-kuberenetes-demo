@@ -1,0 +1,129 @@
+#!/bin/bash
+# usage: prepare-host (minikube|kind|k3s|oc_cluster|minishift|virtctl|oc)
+
+set -e
+
+source $(dirname $(realpath $0))/defaults
+
+_cache() {
+  local BIN="$1"
+  shift 1
+  local FETCHCMD="$@"
+
+  local KEY=$(md5sum <<<"$FETCHCMD" | cut -d " " -f1)
+
+  [[ ! -d cache ]] && mkdir cache
+
+  if [[ ! -e "cache/$KEY" ]];
+  then
+    # We expect the FETCHCMD to provide $BIN in $PWD
+    eval "$FETCHCMD"
+    mv "$BIN" "cache/$KEY"
+  fi
+
+  ln -fv "cache/$KEY" "$BIN"
+}
+
+_install_bin() {
+  local BIN=$1
+  sudo install -m a+x $BIN /usr/local/bin
+}
+
+_virtctl() {
+  local VER=$1
+
+  _cache virtctl "curl -Lo virtctl \
+    https://github.com/kubevirt/kubevirt/releases/download/$VER/virtctl-$VER-linux-amd64"
+
+  _install_bin virtctl
+}
+
+_oc() {
+  _cache oc "curl -L \
+    https://github.com/openshift/origin/releases/download/v3.11.0/openshift-origin-client-tools-v3.11.0-0cbc58b-linux-64bit.tar.gz \
+    | tar xz --strip-components=1 openshift-origin-client-tools-v3.11.0-0cbc58b-linux-64bit/oc"
+
+  _install_bin oc
+
+  # For compatibility
+  if [[ ! -f /usr/local/bin/kubectl ]];
+  then
+    sudo ln -sf /usr/local/bin/oc /usr/local/bin/kubectl
+  fi
+}
+
+_kubectl() {
+  _cache kubectl "curl -Lo kubectl \
+    https://storage.googleapis.com/kubernetes-release/release/v1.19.0/bin/linux/amd64/kubectl"
+
+  _install_bin kubectl
+}
+
+_crictl() {
+  _cache crictl "curl -L \
+    https://github.com/kubernetes-incubator/cri-tools/releases/download/v1.19.0/crictl-v1.19.0-linux-amd64.tar.gz \
+    | tar xz crictl"
+
+  _install_bin crictl
+}
+
+_minikube() {
+  _kubectl
+  _crictl
+
+  _cache minikube "curl -Lo minikube \
+    https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64"
+
+  _install_bin minikube
+}
+
+_kind() {
+  _kubectl
+
+  _cache kind "curl -Lo kind \
+    https://github.com/kubernetes-sigs/kind/releases/download/v0.9.0/kind-linux-amd64"
+
+  _install_bin kind
+}
+
+_k3s() {
+  # NOOP All done in start cluster
+  echo
+}
+
+_oc_cluster() {
+  sudo sed -i 's%DOCKER_OPTS=\"%DOCKER_OPTS=\"--insecure-registry 172.30.0.0/16 %' /etc/default/docker
+  sudo systemctl restart docker
+  echo 'openshift.local.clusterup' >> .dockerignore
+
+  _oc
+}
+
+_minishift() {
+  local MVER=1.27.0
+  _cache minishift "curl -L \
+    https://github.com/minishift/minishift/releases/download/v$MVER/minishift-$MVER-linux-amd64.tgz \
+    | tar xz --strip-components=1 minishift-$MVER-linux-amd64/minishift"
+
+  _install_bin minishift
+
+  # User CI key
+  USSH=$HOME/.ssh
+  mkdir -p $USSH
+  ssh-keygen -t rsa -N '' -f $USSH/ci_id_rsa
+  cat >> $USSH/config <<EOF
+Host localhost
+  StrictHostKeyChecking no
+EOF
+
+  # Allow User CI key to login as root
+  sudo bash <<EOF
+mkdir -p /root/.ssh
+cat $USSH/ci_id_rsa.pub >> /root/.ssh/authorized_keys
+chmod g-rw,o-rw /root/.ssh /root/.ssh/* $USSH/* $USSH
+EOF
+
+  _oc
+}
+
+_${1:-$DEFAULT_PLATFORM}  ${2:-$DEFAULT_KUBEVIRT_VER}
