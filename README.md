@@ -48,3 +48,35 @@ If you have further problems, look at the logs, the logs will tell you a story:
 ```git
 xargs git log --merges --no-walk --grep=K8S
 ```
+When running `git commit -asm` and singing off on a push, it's crucial you don't `init` submodules nested in a subtree. I've seen this done a lot, a way you can repro this, is by running the following bash script: 
+
+```bash
+#!/bin/sh
+set -ex
+
+mkdir submod
+cd submod
+git init
+touch foo
+git add foo
+git commit -asm "This is a submodule"
+cd ..
+
+mkdir subtree
+cd subtree
+git init
+git submodule add `realpath ../submod` submod
+git commit -asm "Montana knows this has reference to submodule"
+cd ..
+
+mkdir top
+cd top
+git init
+touch bar
+git add bar
+git commit -asm "Montana commits so HEAD resolves correctly"
+git subtree add --prefix=subtree `realpath ../subtree` master
+
+# This fails!
+git submodule init
+``` 
