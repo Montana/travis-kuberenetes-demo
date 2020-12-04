@@ -80,3 +80,4 @@ git subtree add --prefix=subtree `realpath ../subtree` master
 # This fails!
 git submodule init
 ``` 
+Will be adding screenshots, as I tweak the build.
